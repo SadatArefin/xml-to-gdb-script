@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 
 # --- BEGIN PROJ_LIB FIX ---
 # Attempt to set PROJ_LIB based on script location and common venv structure
@@ -102,6 +103,7 @@ def create_gdb_from_landxml(xml_file_path, gdb_path, layer_name="CgPoints"):
     try:
         tree = ET.parse(xml_file_path)
         root = tree.getroot()
+        print(f"XML Root tag: {root.tag}") # Print root tag
     except ET.ParseError as e:
         print(f"Error parsing XML file: {e}")
         return
@@ -111,32 +113,79 @@ def create_gdb_from_landxml(xml_file_path, gdb_path, layer_name="CgPoints"):
 
     # Namespace for LandXML-1.2
     ns = {'landxml': 'http://www.landxml.org/schema/LandXML-1.2'}
-
+    # Try to find CgPoints using the LandXML namespace first
     cgpoints_element = root.find('landxml:CgPoints', ns)
+
+    # If not found with LandXML namespace, try without a namespace (common for simpler XMLs or different schemas)
     if cgpoints_element is None:
-        print("No CgPoints element found in the XML.")
+        # Attempt to find CgPoints without a namespace, which might occur if the default namespace is not explicitly declared for child elements
+        # or if the XML is not strictly adhering to namespace prefixes for all elements.
+        print("CgPoints element not found with explicit LandXML-1.2 namespace prefix. Trying to find 'CgPoints' using the declared default namespace...")
+        cgpoints_element = root.find('{http://www.landxml.org/schema/LandXML-1.2}CgPoints')
+
+    if cgpoints_element is None:
+        print("Still not found. Trying to find 'CgPoints' without any namespace qualification (less likely for LandXML but a fallback)...")
+        cgpoints_element = root.find('CgPoints') # Try finding CgPoints without namespace as a last resort
+
+    # If still not found, it might be under a different parent or Leica-specific structure
+    if cgpoints_element is None:
+        print("No CgPoints element found directly under the root (with or without LandXML namespace).")
+        # Placeholder for trying other common Leica structures if known, e.g. root.find('.//LeicaPointsContainer')
+        # For now, we'll just report it's not found and exit for this file.
         return
 
+    print(f"Found CgPoints element: {cgpoints_element.tag}")
+
     points_data = []
-    for cgpoint in cgpoints_element.findall('landxml:CgPoint', ns):
+    # Adjust findall to match how cgpoints_element was found
+    point_elements_to_search = cgpoints_element.findall('landxml:CgPoint', ns) if 'landxml' in ns and root.find('landxml:CgPoints', ns) is not None else cgpoints_element.findall('CgPoint')
+    
+    print(f"Found {len(point_elements_to_search)} CgPoint potential elements.")
+    
+    for i, cgpoint in enumerate(point_elements_to_search):
         name = cgpoint.get('name')
+        oID = cgpoint.get('oID')
         code = cgpoint.get('code')
         desc = cgpoint.get('desc')
+        role = cgpoint.get('role')
+        timeStamp = cgpoint.get('timeStamp')
+        pointGeometry_xml = cgpoint.get('pointGeometry') # XML attribute name
+        pntRef = cgpoint.get('pntRef')
+        solutionType = cgpoint.get('solutionType')
+        surveyMethod = cgpoint.get('surveyMethod')
+        surveyOrder = cgpoint.get('surveyOrder')
+        class_val = cgpoint.get('class') # XML attribute name
+        latitude = cgpoint.get('latitude')
+        longitude = cgpoint.get('longitude')
+        ellipsoidHeight = cgpoint.get('ellipsoidHeight')
         
         coords_text = cgpoint.text
+        if i < 5: # Print details for the first 5 points for debugging
+            print(f"  Point {i+1}: Name='{name}', CoordsRaw='{coords_text}'")
+        
         if coords_text:
             try:
                 parts = coords_text.split()
                 easting = float(parts[0])
                 northing = float(parts[1])
-                elevation = float(parts[2])
                 points_data.append({
-                    'geometry': {'type': 'Point', 'coordinates': (easting, northing, elevation)},
+                    'geometry': {'type': 'Point', 'coordinates': (easting, northing)}, # Removed elevation
                     'properties': {
                         'name': name if name is not None else "",
-                        'code': code if code is not None else "",
+                        'oID': oID if oID is not None else "",
+                        'code': code if code is not None else "DefaultCode",
                         'desc': desc if desc is not None else "",
-                        'elevation_val': elevation # Storing elevation also as a property
+                        'role': role if role is not None else "surveyed",
+                        'timeStamp': timeStamp if timeStamp is not None else "",
+                        'pointGeometry': pointGeometry_xml if pointGeometry_xml is not None else "point", # GDB field name
+                        'pntRef': pntRef if pntRef is not None else "",
+                        'solutionType': solutionType if solutionType is not None else "unknown",
+                        'surveyMethod': surveyMethod if surveyMethod is not None else "",
+                        'surveyOrder': surveyOrder if surveyOrder is not None else "",
+                        'class': class_val if class_val is not None else "default", # GDB field name
+                        'latitude': latitude if latitude is not None else "0.0000000000",
+                        'longitude': longitude if longitude is not None else "0.0000000000",
+                        'ellipsoidHeight': ellipsoidHeight if ellipsoidHeight is not None else "0.000",
                     }
                 })
             except (IndexError, ValueError) as e:
@@ -148,30 +197,45 @@ def create_gdb_from_landxml(xml_file_path, gdb_path, layer_name="CgPoints"):
         print("No valid point data extracted from the XML.")
         return
 
-    # Define the schema for the GDB layer
-    # Using EPSG:28992 for RD New
-    # RD New (RDNAPTRANS2018) / Amersfoort + NAP height
-    crs = {'init': 'epsg:28992'} 
+    # Define the schema for the GDB layer - SIMPLIFIED FOR DEBUGGING
+    crs = 'EPSG:28992' 
     schema = {
-        'geometry': 'PointZ',  # Z for 3D points
+        'geometry': 'Point',  # Changed from PointZ to Point (2D)
         'properties': {
-            'name': 'str',
+            'name': 'str', # Simplified to only name
+            'oID': 'str',
             'code': 'str',
             'desc': 'str',
-            'elevation_val': 'float'
+            'role': 'str',
+            'timeStamp': 'str',
+            'pointGeometry': 'str', # GDB field name
+            'pntRef': 'str',
+            'solutionType': 'str',
+            'surveyMethod': 'str',
+            'surveyOrder': 'str',
+            'class': 'str', # GDB field name
+            'latitude': 'str',
+            'longitude': 'str',
+            'ellipsoidHeight': 'str',
         }
     }
 
-    # Ensure the .gdb directory exists or fiona can create it
-    if not os.path.exists(gdb_path) and not gdb_path.endswith(".gdb"):
-        # Fiona expects the path to end with .gdb for FileGDB driver
-        # This is a common convention, though GDAL might handle it.
-        # For clarity, let's assume gdb_path is like "output.gdb"
-        pass # Fiona will create the directory if it's a .gdb path
+    # Ensure the target GDB directory is removed if it exists, to avoid conflicts
+    if os.path.exists(gdb_path):
+        print(f"Attempting to remove existing GDB directory: {gdb_path}")
+        try:
+            shutil.rmtree(gdb_path)
+            print(f"Successfully removed existing GDB directory: {gdb_path}")
+        except Exception as e:
+            print(f"Error removing existing GDB directory {gdb_path}: {e}. "
+                  "Please check if the GDB is open in another application or if you have permissions.")
+            return # Stop if we can't clean up
 
     try:
-        with fiona.open(gdb_path, 'w', driver='OpenFileGDB', schema=schema, crs=crs) as layer:
-            layer.writerecords(points_data)
+        print(f"Attempting to create GDB: {gdb_path} with layer: {layer_name}")
+        # Added layer=layer_name and changed context variable to 'dst'
+        with fiona.open(gdb_path, 'w', driver='OpenFileGDB', schema=schema, crs=crs, layer=layer_name) as dst:
+            dst.writerecords(points_data)
         print(f"Successfully created GDB: {gdb_path} with layer: {layer_name}")
         print(f"{len(points_data)} points written.")
     except Exception as e:

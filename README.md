@@ -1,18 +1,22 @@
-# LandXML to GDB Converter
+# LandXML and GDB Conversion Toolkit
 
-A Python utility to convert LandXML files to ESRI File Geodatabases (.gdb) by extracting CgPoint data.
+A Python utility for bidirectional conversion between LandXML files and ESRI File Geodatabases (.gdb).
 
 ## Overview
 
-This utility parses LandXML files (version 1.2), extracts survey point data (CgPoints), and creates File Geodatabases with 3D point geometry. It's particularly useful for surveyors and GIS professionals working with survey data.
+This toolkit provides two conversion utilities:
+1. **LandXML to GDB**: Parses LandXML files and creates File Geodatabases with point data
+2. **GDB to LandXML**: Extracts point features from File Geodatabases and creates LandXML files
+
+These tools are particularly useful for surveyors and GIS professionals working with survey data across different formats.
 
 ## Features
 
-- Converts LandXML 1.2 format to File Geodatabases
-- Extracts point name, code, description, and 3D coordinates
+- Bidirectional conversion between LandXML 1.2 and File Geodatabases
+- Extracts and preserves point attributes (name, code, description, coordinates)
 - Automatically handles PROJ_LIB environment variable setup
-- Processes multiple XML files in batch mode
-- Creates point layers with proper Z-values (elevation)
+- Processes multiple files in batch mode
+- Preserves metadata and attributes like timestamp, survey method, solution type
 
 ## Requirements
 
@@ -38,37 +42,46 @@ This utility parses LandXML files (version 1.2), extracts survey point data (CgP
 
 ## Usage
 
-1. Place your LandXML files in the `input_xmls` folder (will be created if it doesn't exist)
-2. Run the script:
+### LandXML to GDB Conversion
+1. Place your LandXML files in the `input_xmls` folder
+2. Run:
     ```
     python transform.py
     ```
-3. The converted File Geodatabases will be created in the `output_gdbs` folder
+3. Converted GDBs will be created in the `output_gdbs` folder
+
+### GDB to LandXML Conversion
+1. Place your GDB folders in the `input_gdbs` folder
+2. Run:
+    ```
+    python transform_opposite.py
+    ```
+3. Converted XML files will be created in the `output_xmls` folder
 
 ## Input & Output
 
-### Input
-- **Format**: LandXML files (.xml) following the LandXML 1.2 schema
-- **Location**: Place files in the `input_xmls` directory (and subdirectories)
-- **Required Elements**: Files must contain `CgPoints` elements with point data
+### LandXML to GDB
+- **Input**: LandXML 1.2 files with `CgPoints` elements
+- **Output**: File Geodatabases with "SurveyPoints" layer (Point geometry)
 
-### Output
-- **Format**: ESRI File Geodatabase (.gdb)
-- **Location**: Created in the `output_gdbs` directory
-- **Layer Name**: "SurveyPoints" (configurable in the script)
-- **Coordinate System**: EPSG:28992 (RD New / Amersfoort + NAP height)
-- **Attributes**: name, code, description, and elevation
+### GDB to LandXML
+- **Input**: File Geodatabases with "plaatsbepalingspunt_p" point layer
+- **Output**: LandXML 1.2 files with proper namespaces and metadata
+
+## Configuration
+
+- **Coordinate System**: Default is EPSG:28992 (RD New / Amersfoort)
+- **Layer Names**: 
+  - GDB output uses "SurveyPoints" (configurable in `transform.py`)
+  - GDB input expects "plaatsbepalingspunt_p" (configurable in `transform_opposite.py`)
 
 ## Troubleshooting
 
 ### PROJ_LIB Issues
-The script includes comprehensive error handling for PROJ_LIB path issues, which are common when working with projection libraries. If you encounter projection-related errors, the script will attempt to resolve them automatically.
+Both scripts include comprehensive error handling for PROJ_LIB path issues, which are common when working with projection libraries.
 
 ### Common Problems
 - **Missing proj.db**: Ensure pyproj is properly installed with its data files
 - **XML Parsing Errors**: Verify your XML files follow the LandXML 1.2 schema
-- **GDB Creation Failures**: Check that GDAL/OGR is installed with FileGDB driver support
-
-## Notes
-- The coordinate system is currently hardcoded to EPSG:28992 (Dutch coordinate system)
-- To use a different coordinate system, modify the `crs` variable in the `create_gdb_from_landxml` function
+- **GDB Access Failures**: Check that GDAL/OGR is installed with FileGDB driver support
+- **Layer Name Issues**: Verify layer names match the expected names in your input files
