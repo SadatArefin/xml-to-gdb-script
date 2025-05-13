@@ -1,0 +1,12 @@
+/build/*
+/input_gdbs/*
+/input_xmls/*
+/output_gdbs/*
+/output_xmls/*
+**.xml
+**.gdb
+/__pycache__/*
+**.zip
+**.ini
+**.spec
+/.venv
